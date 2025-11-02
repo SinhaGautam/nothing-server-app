@@ -12,9 +12,7 @@ dotenv.config();
 
 const app = express();
 
-const FW_PORT = process.env.FRONTEND_PORT || 5173;
-const FW_HOST = process.env.FRONTEND_HOST || 'localhost';
-const allowedOrigins = [`http://${FW_HOST}:${FW_PORT}`];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
 app.use(cors({
     origin: allowedOrigins,
     credentials: true
