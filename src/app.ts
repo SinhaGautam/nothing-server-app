@@ -2,11 +2,11 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { errorHandler } from './middleware/errorHandler';
-import mongoose from 'mongoose';
 import productRoutes from './routes/productRoutes';
 import checkoutRoutes from './routes/checkoutRoutes';
 import shareRoutes from './routes/shareRoutes';
 import dotenv from 'dotenv';
+import { connectToDatabase } from './utils/connection';
 
 dotenv.config();
 
@@ -20,11 +20,15 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const DB = process.env.MONGO_URI?.replace('<PASSWORD>', process.env.DB_PASSWORD!);
-
-mongoose.connect(DB!)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB error", err));
+// Connect to database before handling requests
+app.use(async (req, res, next) => {
+    try {
+        await connectToDatabase();
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
 
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/checkout", checkoutRoutes);
