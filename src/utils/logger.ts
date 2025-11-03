@@ -6,6 +6,8 @@ const logFormat = format.printf(({ level, message, timestamp, stack }) => {
   return `${timestamp} ${level}: ${stack || message}`;
 });
 
+const isServerlessEnvironment = process.env.VERCEL || process.env.NODE_ENV === 'production';
+
 // Create logger instance
 const logger = winston.createLogger({
   level: 'info',
@@ -35,13 +37,18 @@ winston.addColors({
   debug: 'blue'
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new transports.Console({
-    format: format.combine(
-      format.colorize(),
-      logFormat
-    )
-  }));
+// Add file transports only in development environment
+if (!isServerlessEnvironment) {
+  logger.add(new transports.File({ filename: 'logs/error.log', level: 'error' }));
+  logger.add(new transports.File({ filename: 'logs/combined.log' }));
+  
+  // Add exception and rejection handlers for development
+  logger.exceptions.handle(
+    new transports.File({ filename: 'logs/exceptions.log' })
+  );
+  logger.rejections.handle(
+    new transports.File({ filename: 'logs/rejections.log' })
+  );
 }
 
 export { logger };
