@@ -32,6 +32,7 @@ export class CheckoutController {
 
   async handleCheckout(req: Request, res: Response) {
     // Validate request body against schema
+    logger.info('Initiating checkout process');
     const result = CheckoutSchema.safeParse(req.body);
     if (!result.success) {
       logger.error('CheckOut validation failed: ', result.error)
@@ -50,6 +51,10 @@ export class CheckoutController {
 
       // 1. Validate and fetch product details
       const product = await this.validateAndFetchProduct(productId, session);
+      if (!product) {
+        throw new Error('Product validation failed during checkout');
+      }
+      logger.debug(`Product validated: ${product.name} at price ${product.price}`);
 
       // 2. Create payment order with Razorpay
       const razorpayOrder = await this.createRazorpayOrder(
@@ -58,6 +63,10 @@ export class CheckoutController {
         customerEmail,
         receipt
       );
+      if (!razorpayOrder) {
+        throw new Error('Razorpay order creation failed during checkout');
+      }
+      logger.debug(`Razorpay order created with ID: ${razorpayOrder.id}`);
 
       // 3. Create order record in database
       const order = await this.createOrderRecord(
@@ -67,14 +76,16 @@ export class CheckoutController {
         razorpayOrder.id,
         session
       );
+      if (!order) {
+        throw new Error('Order creation failed during checkout');
+      }
+      logger.debug(`Order record created with Order ID: ${order.orderId}`);
 
       // 4. Commit transaction if all operations succeed
       await session.commitTransaction();
       logger.info(`Order ${order.orderId} created successfully`);
 
-
       return new ApiResponse(res).success('Checkout successful', razorpayOrder);
-
 
     } catch (error) {
 
@@ -82,8 +93,6 @@ export class CheckoutController {
       await session.abortTransaction();
       logger.error('Checkout failed:', error);
       if (error instanceof Error) {
-
-
         // Handle specific error types with appropriate responses
         if (error.message.includes('Product')) {
           return new ApiResponse(res).error(error.message);
@@ -99,15 +108,17 @@ export class CheckoutController {
     }
     finally {
       // Ensure session is always ended
+      logger.debug('Ending database session for checkout process');
       session.endSession();
     }
   }
 
   async validatePayment(req: Request, res: Response) {
 
+    logger.info('Validating payment request received.');
     const result = PaymentDetailsSchema.safeParse(req.body);
     if (!result.success) {
-      logger.error('CheckOut validation failed: ', result.error)
+      logger.error('Payment Request validation failed: ', result.error)
       return new ApiResponse(res).error('Payment Request validation failed');
 
     }
@@ -115,6 +126,7 @@ export class CheckoutController {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
     try {
+      logger.info('Verifying payment signature...');
       // Verify the signature
       const generatedSignature = crypto
         .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
@@ -124,7 +136,7 @@ export class CheckoutController {
       if (generatedSignature !== razorpay_signature) {
         return new ApiResponse(res).error('Invalid signature');
       }
-
+      logger.info('Payment signature verified successfully.');
       return new ApiResponse(res).success('Payment Validated');
     } catch (error) {
       logger.error('Payment verification error:', error);
@@ -133,15 +145,15 @@ export class CheckoutController {
   }
 
   async confirmOrder(req: Request, res: Response) {
+
+    logger.info('Confirming order request received.');
     const result = OrderConfirmSchema.safeParse(req.body);
     if (!result.success) {
       logger.error('OrderConfirmSchema validation failed: ', result.error)
       return new ApiResponse(res).error('Order Confirm Request validation failed');
-
     }
     try {
-
-
+      logger.info('Validating payment details...');
       const { customerName, customerEmail, productId, paymentDetails:
         {
           razorpay_payment_id,
@@ -154,9 +166,17 @@ export class CheckoutController {
         .select('name price category inventory isActive')
         .lean()
         .exec();
+
       if (!product) {
+        logger.error('Product not found during order confirmation.');
+        return new ApiResponse(res).error('Order not found');
+      } 
+      const order = await OrderModel.findOne({ orderId: razorpay_order_id }).exec();
+      if (!order) {
+        logger.error('Order not found during order confirmation.');
         return new ApiResponse(res).error('Order not found');
       } else {
+        logger.info('Order details validated successfully.');
         const productObj = product;
         this.sendConfirmationEmailAsync(
           customerEmail,
@@ -172,8 +192,8 @@ export class CheckoutController {
         return new ApiResponse(res).success('Order confirmed',result)
       }
 
-
     } catch (error) {
+      logger.error('Order confirmation error:', error);
       return new ApiResponse(res).error('Something Went wrong');
     }
   }
@@ -191,7 +211,7 @@ export class CheckoutController {
     if (!mongoose.Types.ObjectId.isValid(productId)) {
       throw new Error('Invalid product ID format');
     }
-
+    logger.info(`Validating product with ID: ${productId}`);
     const product = await ProductModel.findById(productId)
       .session(session)
       .select('name price category inventory isActive')
@@ -199,6 +219,7 @@ export class CheckoutController {
       .exec();
 
     if (!product) {
+      logger.error('Product not found with ID:', productId);
       throw new Error('Product not found');
     }
     // if (!product.isActive) {
@@ -231,6 +252,7 @@ export class CheckoutController {
     receipt: string
   ) {
     try {
+      logger.info(`Creating Razorpay order for product with ID: ${product._id}, amount: ${product.price}`);
       return await this.razorpay.orders.create({
         amount: product.price,
         currency: 'INR',
@@ -263,6 +285,7 @@ export class CheckoutController {
     razorpayOrderId: string,
     session: mongoose.ClientSession
   ) {
+    logger.info(`Creating order record for Razorpay order ID: ${razorpayOrderId}`);
     const order = new OrderModel({
       orderId: razorpayOrderId,
       productId: product._id,
@@ -276,6 +299,7 @@ export class CheckoutController {
     });
 
     try {
+      logger.info('Saving order record to database...');
       await order.save({ session });
       return order;
     } catch (error) {

@@ -9,7 +9,7 @@ export class ShareController {
 
 
     async handleShare(req: Request, res: Response) {
-
+        logger.info('Handling share request with body:', req.body);
         const result = ShareSchema.safeParse(req.body);
         if (!result.success) {
             new ApiResponse(res).error('Failed to share', result.error)
@@ -19,9 +19,11 @@ export class ShareController {
         const { orderNumber, platform } = result.data;
 
         try {
+            logger.info(`Processing share for orderNumber: ${orderNumber} on platform: ${platform}`);
             const order = await OrderModel.findOne({ orderId: orderNumber });
             if (!order) {
-                new ApiResponse(res).error('Order not found' );
+                logger.error('Order not found');
+                new ApiResponse(res).error('Order not found');
                 return;
             }
 
@@ -59,17 +61,23 @@ export class ShareController {
 
 
 function generateShareUrl(orderNumber: string, platform: string, order: any): string {
-    const baseUrl = process.env.BASE_URL || "https://buynothing.com";
-    const message = encodeURIComponent(`I just bought ${order.amount} worth of absolutely nothing from buyNothing.com! 🎯 Order #${orderNumber} - achieving peak minimalism! 💫`);
-    const url = encodeURIComponent(`${baseUrl}?ref=${orderNumber}`);
+    try {
+        logger.info(`Generating share URL for orderNumber: ${orderNumber} on platform: ${platform}`);
+        const baseUrl = process.env.BASE_URL || "https://buynothing.com";
+        const message = encodeURIComponent(`I just bought ${order.amount} worth of absolutely nothing from buyNothing.com! 🎯 Order #${orderNumber} - achieving peak minimalism! 💫`);
+        const url = encodeURIComponent(`${baseUrl}?ref=${orderNumber}`);
 
-    const shareUrls = {
-        facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${message}`,
-        twitter: `https://twitter.com/intent/tweet?text=${message}&url=${url}&hashtags=buynothing,minimalism,nothing`,
-        linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}&summary=${message}`,
-        whatsapp: `https://wa.me/?text=${message}%20${url}`,
-        instagram: `${baseUrl}?share=instagram&order=${orderNumber}` // Instagram doesn't support direct URL sharing
-    };
+        const shareUrls = {
+            facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${message}`,
+            twitter: `https://twitter.com/intent/tweet?text=${message}&url=${url}&hashtags=buynothing,minimalism,nothing`,
+            linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}&summary=${message}`,
+            whatsapp: `https://wa.me/?text=${message}%20${url}`,
+            instagram: `https://www.instagram.com/?url=${url}`
+        };
 
-    return shareUrls[platform as keyof typeof shareUrls] || shareUrls.facebook;
+        return shareUrls[platform as keyof typeof shareUrls] || shareUrls.facebook;
+    } catch (error) {
+        logger.error('Error generating share URL:', error);
+        return '';
+    }
 }

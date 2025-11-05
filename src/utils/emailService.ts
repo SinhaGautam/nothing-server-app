@@ -23,6 +23,7 @@ export async function sendConfirmationEmail(
   product: string = "Nothing",
   order: string
 ): Promise<void> {
+  logger.info(`Sending confirmation email to ${customerEmail}`);
   const subject = `Purchase Confirmation - You've Successfully Bought ${product}!`;
   
   const html = `
@@ -102,9 +103,9 @@ export async function sendConfirmationEmail(
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`Confirmation email sent to ${customerEmail}`);
+    logger.info(`Confirmation email sent to ${customerEmail}`);
   } catch (error) {
-    console.error("Failed to send confirmation email:", error);
+    logger.error("Failed to send confirmation email:", error);
     throw error;
   }
 }
@@ -114,6 +115,7 @@ export async function sendContactEmail(
   customerName: string,
   message: string
 ): Promise<void> {
+  logger.info(`Sending contact email from ${customerName} <${customerEmail}>`);
   const subject = `Contact message from ${customerName}`;
   const text = [
     `Name: ${customerName}`,

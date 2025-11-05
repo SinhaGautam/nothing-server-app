@@ -12,11 +12,18 @@ dotenv.config();
 
 const app = express();
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:5173',
+  'https://nothing-client-app.vercel.app'
+];
+
 app.use(cors({
-    origin: allowedOrigins,
-    credentials: true
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -29,6 +36,15 @@ app.use(async (req, res, next) => {
         next(error);
     }
 });
+
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
 
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/checkout", checkoutRoutes);
